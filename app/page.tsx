@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Bus, RefreshCw, Clock, MapPin, ChevronRight } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Bus, RefreshCw, Clock, MapPin, ChevronRight, Navigation } from 'lucide-react'
 
 interface Stop {
   stop_id: string
@@ -19,114 +19,120 @@ interface Route {
   stops: Stop[]
 }
 
-type Phase = 'idle' | 'riding' | 'alighted' | 'reboarded'
+type Phase = 'idle' | 'selectStop' | 'riding' | 'alighted' | 'reboarded'
 
-function BusRouteVisual({ stops, currentStopId, phase }: {
+// 타원형 노선 시각화
+function BusRouteVisual({ stops, currentStopId, boardStopId }: {
   stops: Stop[]
   currentStopId?: string
-  phase: Phase
+  boardStopId?: string
 }) {
   const total = stops.length
   if (total === 0) return null
 
-  // 타원형 경로 계산
-  const W = 340, H = 180
+  const W = 340, H = 190
   const cx = W / 2, cy = H / 2
-  const rx = cx - 36, ry = cy - 28
+  const rx = cx - 40, ry = cy - 30
 
-  const getPos = (i: number, n: number) => {
-    const angle = (2 * Math.PI * i) / n - Math.PI / 2
-    return {
-      x: cx + rx * Math.cos(angle),
-      y: cy + ry * Math.sin(angle),
-    }
+  const getPos = (i: number) => {
+    const angle = (2 * Math.PI * i) / total - Math.PI / 2
+    return { x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) }
   }
 
-  // 타원 경로 문자열
-  const ellipsePath = `M ${cx} ${cy - ry} A ${rx} ${ry} 0 1 1 ${cx - 0.01} ${cy - ry}`
+  const currentIdx = stops.findIndex(s => s.stop_id === currentStopId)
+  const boardIdx = stops.findIndex(s => s.stop_id === boardStopId)
 
   return (
-    <div className="w-full flex justify-center my-2">
+    <div className="w-full flex justify-center my-3">
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: 360 }}>
         {/* 타원 트랙 */}
         <ellipse cx={cx} cy={cy} rx={rx} ry={ry}
-          fill="none" stroke="#c7d2fe" strokeWidth="3" strokeDasharray="6 3" />
+          fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeDasharray="5 3" opacity="0.4" />
 
-        {/* 정류장 점들 */}
+        {/* 정류장 */}
         {stops.map((stop, i) => {
-          const pos = getPos(i, total)
+          const pos = getPos(i)
           const isCurrent = stop.stop_id === currentStopId
-          const isPassed = currentStopId
-            ? stops.findIndex(s => s.stop_id === currentStopId) > i
-            : false
+          const isBoard = stop.stop_id === boardStopId
+          const isPassed = currentIdx >= 0 && i < currentIdx
+
+          const labelX = pos.x + (pos.x - cx) * 0.42
+          const labelY = pos.y + (pos.y - cy) * 0.42
 
           return (
             <g key={stop.stop_id}>
-              <circle
-                cx={pos.x} cy={pos.y} r={isCurrent ? 10 : 6}
-                fill={isCurrent ? '#6366f1' : isPassed ? '#a5b4fc' : '#e0e7ff'}
-                stroke={isCurrent ? '#4338ca' : '#818cf8'}
+              <circle cx={pos.x} cy={pos.y}
+                r={isCurrent ? 11 : isBoard ? 9 : 5}
+                fill={isCurrent ? '#6366f1' : isBoard ? '#10b981' : isPassed ? '#818cf8' : '#1e1b4b'}
+                stroke={isCurrent ? '#a5b4fc' : isBoard ? '#6ee7b7' : '#6366f1'}
                 strokeWidth={isCurrent ? 2.5 : 1.5}
               />
               {isCurrent && (
                 <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
-                  fontSize="8" fill="white" fontWeight="bold">🚌</text>
+                  fontSize="9" fill="white">🚌</text>
               )}
-              {/* 정류장 이름 - 바깥쪽에 표시 */}
-              <text
-                x={pos.x + (pos.x - cx) * 0.38}
-                y={pos.y + (pos.y - cy) * 0.38}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fontSize="7.5"
-                fill={isCurrent ? '#4338ca' : '#6b7280'}
-                fontWeight={isCurrent ? 'bold' : 'normal'}
-              >
+              {isBoard && !isCurrent && (
+                <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
+                  fontSize="8" fill="white">★</text>
+              )}
+              <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="middle"
+                fontSize="7.2"
+                fill={isCurrent ? '#a5b4fc' : isBoard ? '#6ee7b7' : '#94a3b8'}
+                fontWeight={isCurrent || isBoard ? 'bold' : 'normal'}>
                 {stop.stop_name.length > 5 ? stop.stop_name.slice(0, 5) + '…' : stop.stop_name}
               </text>
             </g>
           )
         })}
-
-        {/* 시작점 표시 */}
-        {(() => {
-          const pos = getPos(0, total)
-          return (
-            <text x={pos.x - 2} y={pos.y - 14} textAnchor="middle"
-              fontSize="8" fill="#10b981">출발</text>
-          )
-        })()}
       </svg>
     </div>
   )
 }
 
-function TimeDisplay() {
+function LiveClock() {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
   return (
-    <div className="flex items-center gap-1 text-sm text-indigo-400 font-mono">
-      <Clock size={14} />
-      {now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-    </div>
+    <span className="font-mono text-indigo-300 text-sm">
+      {now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+    </span>
   )
 }
 
-function EstimatedReturn({ startMin, durationMin }: { startMin: number, durationMin: number }) {
-  const returnMin = startMin + durationMin * 2 + 20 // 왕복 + 여유 20분
-  const h = Math.floor(returnMin / 60)
-  const m = returnMin % 60
-  const now = new Date()
-  const returnTime = new Date(now.getTime() + returnMin * 60000)
-  return (
-    <div className="bg-indigo-50 rounded-xl px-4 py-2 text-sm text-indigo-700 flex items-center gap-2">
-      <Clock size={14} />
-      <span>왕복 예상 <b>{h > 0 ? `${h}시간 ` : ''}{m}분</b> · 귀환 약 <b>{returnTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</b></span>
-    </div>
-  )
+// 버스 위치 시뮬레이션 (정류장간 이동 시간 기반)
+function useBusPosition(stops: Stop[], durationMin: number, boardStopId: string, active: boolean) {
+  const [currentIdx, setCurrentIdx] = useState(0)
+  const [nextArrival, setNextArrival] = useState<Date | null>(null)
+
+  useEffect(() => {
+    if (!active || stops.length === 0) return
+    const boardIdx = stops.findIndex(s => s.stop_id === boardStopId)
+    setCurrentIdx(boardIdx >= 0 ? boardIdx : 0)
+
+    const msPerStop = (durationMin * 60 * 1000) / Math.max(stops.length - 1, 1)
+
+    const next = new Date(Date.now() + msPerStop)
+    setNextArrival(next)
+
+    const interval = setInterval(() => {
+      setCurrentIdx(prev => {
+        const nextIdx = prev + 1
+        if (nextIdx >= stops.length) {
+          clearInterval(interval)
+          return prev
+        }
+        setNextArrival(new Date(Date.now() + msPerStop))
+        return nextIdx
+      })
+    }, msPerStop)
+
+    return () => clearInterval(interval)
+  }, [active, stops.length, boardStopId, durationMin])
+
+  return { currentIdx, nextArrival }
 }
 
 export default function Home() {
@@ -136,37 +142,41 @@ export default function Home() {
   const [remainingStops, setRemainingStops] = useState<Stop[]>([])
   const [selectedAlight, setSelectedAlight] = useState('')
   const [selectedReboard, setSelectedReboard] = useState('')
+  const [boardStopId, setBoardStopId] = useState('')
   const [loading, setLoading] = useState(false)
-  const [departureTime] = useState(() => {
-    const now = new Date()
-    return now.getHours() * 60 + now.getMinutes()
-  })
-  const [currentStopIdx, setCurrentStopIdx] = useState(0)
 
-  // 버스 위치 애니메이션
-  useEffect(() => {
-    if (phase !== 'riding' || !route) return
-    const interval = setInterval(() => {
-      setCurrentStopIdx(i => (i + 1) % route.stops.length)
-    }, 1800)
-    return () => clearInterval(interval)
-  }, [phase, route])
+  const { currentIdx, nextArrival } = useBusPosition(
+    remainingStops,
+    route?.estimated_duration_min ?? 30,
+    boardStopId,
+    phase === 'riding'
+  )
+
+  const currentStop = remainingStops[currentIdx]
+
+  // 현재 시각 기준 귀환 예정 시각
+  const returnTime = route ? new Date(Date.now() + route.estimated_duration_min * 2 * 60 * 1000 + 20 * 60 * 1000) : null
 
   async function handleRecommend() {
     setLoading(true)
     try {
       const res = await fetch('/api/recommend')
       const data = await res.json()
+      if (data.error) { alert(data.error); return }
       setRoute(data.route)
       setSessionId(data.sessionId)
       setRemainingStops(data.route.stops)
-      setPhase('riding')
-      setCurrentStopIdx(0)
+      setBoardStopId(data.route.stops[0]?.stop_id ?? '')
+      setPhase('selectStop')
       setSelectedAlight('')
       setSelectedReboard('')
     } finally {
       setLoading(false)
     }
+  }
+
+  function handleConfirmBoard() {
+    setPhase('riding')
   }
 
   async function handleAlight() {
@@ -195,35 +205,31 @@ export default function Home() {
       })
       const data = await res.json()
       setRemainingStops(data.remaining)
+      setBoardStopId(selectedReboard)
       setPhase('reboarded')
     } finally {
       setLoading(false)
     }
   }
 
-  const currentStop = route?.stops[currentStopIdx]
-
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center justify-start py-10 px-4">
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-md">
 
         {/* 헤더 */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2 mb-1">
-            <Bus className="text-indigo-400" size={28} />
-            <h1 className="text-2xl font-bold text-white tracking-tight">버스 룰렛</h1>
+            <Bus className="text-indigo-400" size={26} />
+            <h1 className="text-2xl font-bold text-white">버스 룰렛</h1>
           </div>
-          <p className="text-indigo-300 text-xs mb-2">청주 전체 · 하루 안에 다녀올 수 있는 노선</p>
-          <TimeDisplay />
+          <p className="text-indigo-400 text-xs mb-1">청주 전체 · 당일 왕복 가능 노선</p>
+          <LiveClock />
         </div>
 
         {/* 추천 버튼 */}
         {phase === 'idle' && (
-          <button
-            onClick={handleRecommend}
-            disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold py-5 px-6 rounded-2xl shadow-xl transition-all disabled:opacity-50 text-lg"
-          >
+          <button onClick={handleRecommend} disabled={loading}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 text-lg">
             {loading ? '노선 탐색 중...' : '🎲 무작위 노선 추천받기'}
           </button>
         )}
@@ -233,11 +239,10 @@ export default function Home() {
           <div className="bg-white/10 backdrop-blur rounded-2xl p-5 mb-4 border border-white/10">
             <div className="flex items-center justify-between mb-3">
               <span className="bg-indigo-500 text-white font-bold px-3 py-1 rounded-full text-sm">
-                {route.route_name}번
+                {route.route_name}번 · {route.stops[0] && remainingStops.find(s => s.stop_id === route.stops[0].stop_id) ? (route as any).district ?? '' : ''}
               </span>
-              <button onClick={handleRecommend} disabled={loading}
-                className="text-indigo-300 hover:text-white transition p-1">
-                <RefreshCw size={16} />
+              <button onClick={handleRecommend} disabled={loading} className="text-indigo-300 hover:text-white p-1">
+                <RefreshCw size={15} />
               </button>
             </div>
 
@@ -249,22 +254,62 @@ export default function Home() {
               <span>{route.end_stop}</span>
             </div>
 
-            {/* 예상 소요 시간 */}
-            <EstimatedReturn startMin={departureTime} durationMin={route.estimated_duration_min} />
+            {/* 왕복 예상 시간 */}
+            <div className="bg-indigo-900/50 rounded-xl px-4 py-2 text-sm text-indigo-200 flex items-center gap-2 mb-1">
+              <Clock size={13} />
+              <span>편도 <b>{route.estimated_duration_min}분</b> · 왕복 약 <b>{route.estimated_duration_min * 2 + 20}분</b></span>
+              {returnTime && (
+                <span className="ml-auto text-xs text-indigo-400">
+                  귀환 {returnTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
 
-            {/* 타원형 노선 시각화 */}
+            {/* 타원형 시각화 */}
             <BusRouteVisual
               stops={remainingStops}
-              currentStopId={phase === 'riding' ? currentStop?.stop_id : undefined}
-              phase={phase}
+              currentStopId={phase === 'riding' || phase === 'reboarded' ? currentStop?.stop_id : undefined}
+              boardStopId={boardStopId}
             />
 
-            {/* 현재 정류장 표시 */}
-            {phase === 'riding' && currentStop && (
-              <p className="text-center text-indigo-200 text-xs mt-1">
-                🚌 현재 위치: <span className="font-bold text-white">{currentStop.stop_name}</span>
-              </p>
+            {/* 실시간 버스 위치 */}
+            {(phase === 'riding' || phase === 'reboarded') && currentStop && (
+              <div className="bg-indigo-800/40 rounded-xl px-4 py-2 text-sm">
+                <div className="flex items-center gap-2 text-white">
+                  <Navigation size={13} className="text-indigo-300 animate-pulse" />
+                  <span>현재: <b>{currentStop.stop_name}</b></span>
+                </div>
+                {nextArrival && currentIdx + 1 < remainingStops.length && (
+                  <div className="text-indigo-300 text-xs mt-1">
+                    다음 정류장 <b>{remainingStops[currentIdx + 1]?.stop_name}</b> 도착 예정:{' '}
+                    <b>{nextArrival.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</b>
+                  </div>
+                )}
+                {currentIdx + 1 >= remainingStops.length && (
+                  <div className="text-green-300 text-xs mt-1">🏁 종점 도착!</div>
+                )}
+              </div>
             )}
+          </div>
+        )}
+
+        {/* 승차 정류장 선택 */}
+        {phase === 'selectStop' && (
+          <div className="bg-white/10 backdrop-blur rounded-2xl p-4 mb-4 border border-white/10">
+            <p className="text-white font-semibold mb-2 text-sm">🚏 어디서 탈까요?</p>
+            <select
+              className="w-full bg-slate-800 border border-white/20 text-white rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              value={boardStopId}
+              onChange={e => setBoardStopId(e.target.value)}
+            >
+              {route?.stops.map(stop => (
+                <option key={stop.stop_id} value={stop.stop_id}>{stop.stop_name}</option>
+              ))}
+            </select>
+            <button onClick={handleConfirmBoard}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl transition">
+              여기서 탈게요 🚌
+            </button>
           </div>
         )}
 
@@ -273,22 +318,17 @@ export default function Home() {
           <div className="bg-white/10 backdrop-blur rounded-2xl p-4 mb-4 border border-white/10">
             <p className="text-white font-semibold mb-2 text-sm">중도 하차할 정류장</p>
             <select
-              className="w-full bg-white/10 border border-white/20 text-white rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="w-full bg-slate-800 border border-white/20 text-white rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               value={selectedAlight}
               onChange={e => setSelectedAlight(e.target.value)}
             >
-              <option value="" className="text-gray-800">-- 정류장 선택 --</option>
-              {route?.stops.map(stop => (
-                <option key={stop.stop_id} value={stop.stop_id} className="text-gray-800">
-                  {stop.stop_name}
-                </option>
+              <option value="">-- 정류장 선택 --</option>
+              {remainingStops.map(stop => (
+                <option key={stop.stop_id} value={stop.stop_id}>{stop.stop_name}</option>
               ))}
             </select>
-            <button
-              onClick={handleAlight}
-              disabled={!selectedAlight || loading}
-              className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-2 rounded-xl transition disabled:opacity-40"
-            >
+            <button onClick={handleAlight} disabled={!selectedAlight || loading}
+              className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-2 rounded-xl transition disabled:opacity-40">
               여기서 내릴게요
             </button>
           </div>
@@ -299,22 +339,17 @@ export default function Home() {
           <div className="bg-white/10 backdrop-blur rounded-2xl p-4 mb-4 border border-white/10">
             <p className="text-white font-semibold mb-1 text-sm">어디서 다시 탈까요?</p>
             <select
-              className="w-full bg-white/10 border border-white/20 text-white rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="w-full bg-slate-800 border border-white/20 text-white rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               value={selectedReboard}
               onChange={e => setSelectedReboard(e.target.value)}
             >
-              <option value="" className="text-gray-800">-- 재승차 정류장 선택 --</option>
-              {route?.stops.map(stop => (
-                <option key={stop.stop_id} value={stop.stop_id} className="text-gray-800">
-                  {stop.stop_name}
-                </option>
+              <option value="">-- 재승차 정류장 선택 --</option>
+              {remainingStops.map(stop => (
+                <option key={stop.stop_id} value={stop.stop_id}>{stop.stop_name}</option>
               ))}
             </select>
-            <button
-              onClick={handleReboard}
-              disabled={!selectedReboard || loading}
-              className="w-full bg-green-500 hover:bg-green-400 text-white font-bold py-2 rounded-xl transition disabled:opacity-40"
-            >
+            <button onClick={handleReboard} disabled={!selectedReboard || loading}
+              className="w-full bg-green-500 hover:bg-green-400 text-white font-bold py-2 rounded-xl transition disabled:opacity-40">
               여기서 다시 탈게요
             </button>
           </div>
@@ -332,10 +367,8 @@ export default function Home() {
                 </span>
               ))}
             </div>
-            <button
-              onClick={() => { setPhase('idle'); setRoute(null) }}
-              className="w-full border border-indigo-400 text-indigo-300 font-bold py-2 rounded-xl hover:bg-indigo-500/20 transition"
-            >
+            <button onClick={() => { setPhase('idle'); setRoute(null) }}
+              className="w-full border border-indigo-400 text-indigo-300 font-bold py-2 rounded-xl hover:bg-indigo-500/20 transition">
               🎲 새 노선 추천받기
             </button>
           </div>
