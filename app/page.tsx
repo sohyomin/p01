@@ -103,23 +103,33 @@ function LiveClock() {
 function useBusPosition(stops: Stop[], durationMin: number, boardStopId: string, active: boolean) {
   const [currentIdx, setCurrentIdx] = useState(0)
   const [nextArrivalMs, setNextArrivalMs] = useState(0)
+  const [arrived, setArrived] = useState(false)
+
   useEffect(() => {
     if (!active || stops.length === 0) return
+    setArrived(false)
     const boardIdx = Math.max(0, stops.findIndex(s => s.stop_id === boardStopId))
     setCurrentIdx(boardIdx)
     const msPerStop = Math.max(3000, (durationMin * 60 * 1000) / Math.max(stops.length - 1, 1))
     setNextArrivalMs(Date.now() + msPerStop)
-    const interval = setInterval(() => {
+    let iid: ReturnType<typeof setInterval>
+    iid = setInterval(() => {
       setCurrentIdx(prev => {
         const next = prev + 1
-        if (next >= stops.length) { clearInterval(interval); return prev }
+        if (next >= stops.length - 1) {
+          clearInterval(iid)
+          setArrived(true)
+          setNextArrivalMs(0)
+          return stops.length - 1
+        }
         setNextArrivalMs(Date.now() + msPerStop)
         return next
       })
     }, msPerStop)
-    return () => clearInterval(interval)
+    return () => clearInterval(iid)
   }, [active, stops.length, boardStopId, durationMin])
-  return { currentIdx, nextArrivalMs }
+
+  return { currentIdx, nextArrivalMs, arrived }
 }
 
 function StopSearchSelect({ stops, value, onChange, placeholder }: {
@@ -185,7 +195,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [transferHistory, setTransferHistory] = useState<{ route: string, stop: string }[]>([])
 
-  const { currentIdx, nextArrivalMs } = useBusPosition(currentStops, route?.estimated_duration_min ?? 30, departureStopId, phase === 'riding')
+  const { currentIdx, nextArrivalMs, arrived } = useBusPosition(currentStops, route?.estimated_duration_min ?? 30, departureStopId, phase === 'riding')
   const currentStop = currentStops[currentIdx]
   const nextStop = currentStops[currentIdx + 1]
   const returnTime = route ? new Date(Date.now() + route.estimated_duration_min * 2 * 60 * 1000 + 20 * 60 * 1000) : null
@@ -321,7 +331,7 @@ export default function Home() {
                     ▶ 다음: <b className="text-white">{nextStop.stop_name}</b> 도착 예정 <b className="text-yellow-300">{new Date(nextArrivalMs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</b>
                   </div>
                 )}
-                {!nextStop && <div className="text-green-300 text-xs mt-1">🏁 종점 도착!</div>}
+                {(arrived || !nextStop) && <div className="text-green-300 text-xs mt-1">🏁 종점 도착! 수고하셨어요 🎉</div>}
               </div>
             )}
           </div>
