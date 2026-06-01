@@ -19,14 +19,24 @@ export interface RouteWithStops extends Route {
   stops: Stop[]
 }
 
-/** 하루 이내(왕복 기준 480분 이하)로 다녀올 수 있는 노선 중 무작위 1개 추천 */
+/**
+ * 현재 시각 기준으로 왕복이 가능한 노선만 필터링 후 무작위 추천
+ * - 운행 종료 시각: 23:00 (1380분) 기준
+ * - 왕복 소요 + 여유 20분이 자정 이전이어야 함
+ */
 export async function getRandomRoute(): Promise<RouteWithStops | null> {
-  const MAX_ONE_WAY_MIN = 240 // 왕복 8시간 기준 편도 4시간
+  const now = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const END_OF_DAY = 23 * 60 // 23:00
+  const availableMin = END_OF_DAY - nowMin - 20 // 여유 20분
+
+  if (availableMin <= 0) return null
 
   const { data: routes, error } = await supabase
     .from('routes')
     .select('*')
-    .lte('estimated_duration_min', MAX_ONE_WAY_MIN)
+    // 왕복(x2) + 여유 20분 이내인 노선만
+    .lte('estimated_duration_min', Math.floor(availableMin / 2))
 
   if (error || !routes || routes.length === 0) return null
 
@@ -43,49 +53,26 @@ export async function getRandomRoute(): Promise<RouteWithStops | null> {
   return { ...picked, stops }
 }
 
-/** 중도 하차 후 재승차 정류장 기준으로 남은 구간 반환 */
-export function calcRemainingStops(
-  allStops: Stop[],
-  reboardStopId: string
-): Stop[] {
-  const idx = allStops.findIndex((s) => s.stop_id === reboardStopId)
+export function calcRemainingStops(allStops: Stop[], reboardStopId: string): Stop[] {
+  const idx = allStops.findIndex(s => s.stop_id === reboardStopId)
   if (idx === -1) return allStops
   return allStops.slice(idx)
 }
 
-/** 세션 저장 */
-export async function createSession(
-  routeId: string,
-  boardStopId: string
-): Promise<string | null> {
+export async function createSession(routeId: string, boardStopId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from('sessions')
     .insert({ route_id: routeId, board_stop_id: boardStopId })
     .select('id')
     .single()
-
   if (error) return null
   return data.id
 }
 
-/** 중도 하차 기록 */
-export async function recordAlight(
-  sessionId: string,
-  alightStopId: string
-): Promise<void> {
-  await supabase
-    .from('sessions')
-    .update({ alight_stop_id: alightStopId })
-    .eq('id', sessionId)
+export async function recordAlight(sessionId: string, alightStopId: string): Promise<void> {
+  await supabase.from('sessions').update({ alight_stop_id: alightStopId }).eq('id', sessionId)
 }
 
-/** 재승차 기록 */
-export async function recordReboard(
-  sessionId: string,
-  reboardStopId: string
-): Promise<void> {
-  await supabase
-    .from('sessions')
-    .update({ reboard_stop_id: reboardStopId })
-    .eq('id', sessionId)
+export async function recordReboard(sessionId: string, reboardStopId: string): Promise<void> {
+  await supabase.from('sessions').update({ reboard_stop_id: reboardStopId }).eq('id', sessionId)
 }
